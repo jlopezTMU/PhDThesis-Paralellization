@@ -42,17 +42,6 @@ def train(rank, args, model, device, train_dataset, val_dataset, dataloader_kwar
 
 def test(args, model, device, test_dataset, dataloader_kwargs):
     torch.manual_seed(args.seed)
-    test_loader = torch.utils.data.DataLoader(test_dataset, **dataloader_kwargs)
-
-    test_start_time = time.time()  # Start timing the test
-    test_epoch(model, device, test_loader)
-    test_end_time = time.time()  # End timing the test
-
-    testing_time = test_end_time - test_start_time  # Compute the testing time
-    print('Test Time: {:.2f} seconds'.format(testing_time))
-
-def test(args, model, device, test_dataset, dataloader_kwargs):
-    torch.manual_seed(args.seed)
 
     test_loader = torch.utils.data.DataLoader(test_dataset, **dataloader_kwargs)
 

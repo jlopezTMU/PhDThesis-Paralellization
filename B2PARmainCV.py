@@ -11,7 +11,7 @@ import torch.multiprocessing as mp
 from torch.utils.data.sampler import Sampler
 from torchvision import datasets, transforms
 
-from B2trainPARCV import train, test
+from BtrainPARCV import train, test
 
 
 from six.moves import urllib
@@ -140,11 +140,21 @@ if __name__ == '__main__':
 
     model.to(device)
 
+    best_accuracy = 0.0
+    best_fold = -1
+
     for i in range(args.num_processes):
         print("Fold: {}, Accuracy: {:.2f}%, Training Time: {:.2f} seconds".format(i, results[i][0], results[i][1]))
-        model.load_state_dict(model_states[i])
-        test(args, model, device, dataset2, dataloader_kwargs)
+        if results[i][0] > best_accuracy:
+            best_accuracy = results[i][0]
+            best_fold = i
+    print("The best performing model is with the fold {} with an accuracy of {:.2f}%".format(best_fold, best_accuracy))
+
+    #print("--- Total TRAINING  time is %s seconds ---" % (init_time_train - time.time()))
+
+    # Once training is complete, we can test the model
+    model.load_state_dict(model_states[best_fold])
+    test(args, model, device, dataset2, dataloader_kwargs)
 
 
-    print("--- Total TRAINING  time is %s seconds ---" % (init_time_train - time.time()))
     print("--- Total procesing time is %s seconds ---" % (init_time - time.time()))
