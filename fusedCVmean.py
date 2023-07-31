@@ -253,8 +253,8 @@ if __name__ == '__main__':
     best_processor = -1
     best_fold = -1
 
-    for i, (accuracy, fold, training_time) in enumerate(results):
-        print("Processor: {}, Fold: {}, Accuracy: {:.2f}%, Training Time: {:.2f} seconds".format(i, fold, accuracy, training_time))
+    for i, (accuracy, fold, average_accuracy, training_time) in enumerate(results):
+        print("Processor: {}, Fold: {}, Average Accuracy: {:.2f}%, Accuracy: {:.2f}%, Training Time: {:.2f} seconds".format(i, fold, average_accuracy, accuracy, training_time))
         if accuracy > best_accuracy:
             best_accuracy = accuracy
             best_processor = i
@@ -265,9 +265,10 @@ if __name__ == '__main__':
     ## USED? best_model_state = model_states[best_processor] # State dictionary of the best model
     
     # Calculate global average accuracy
+    # Calculate global average accuracy
     global_avg_accuracy = sum(result[2] for result in results) / len(results)
     best_global_accuracy = min(results, key=lambda x: abs(x[2] - global_avg_accuracy))
-    best_processor, best_fold = best_global_accuracy[1], best_global_accuracy[2]
+    best_processor = results.index(best_global_accuracy) # Get the index of the best processor
 
     # Apply the best global model to the testing dataset
     model.load_state_dict(model_states[best_processor])
