@@ -72,7 +72,7 @@ def train(rank, args, model, device, train_dataset, dataloader_kwargs, val_datal
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
         for epoch in range(1, args.epochs + 1):
-            train_epoch(epoch, args, model, train_loader, optimizer, device)
+            train_epoch(epoch, args, model, train_loader=train_loader, optimizer=optimizer, device=device)
 
         # Once training is done, validate the model on the validation set
         accuracy = compute_validation_accuracy(model, device, val_loader)
@@ -91,27 +91,30 @@ def test(args, model, device, test_dataset, dataloader_kwargs):
     accuracy = test_epoch(model, device, test_loader)
     return accuracy
 
-def train_epoch(epoch, args, model, data_loader, optimizer, device):
+def train_epoch(epoch, args, model, train_loader, optimizer, device):
     model.train()
     pid = os.getpid()
-    for batch_idx, (data, target) in enumerate(data_loader):
+    for batch_idx, (data, target) in enumerate(train_loader):  # Fixed this line
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
-
+        # The following lines were deleted to sppedup the printing 23-7-30
         # print some debug info
         if batch_idx % args.log_interval == 0:
             print('PID: {}, Batch index: {}, Data shape: {}'.format(pid, batch_idx, data.shape))
 
-        if batch_idx % args.log_interval == 0:
-            print('{}\tTrain Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                pid, epoch, batch_idx * len(data), len(data_loader.dataset),
-                100. * batch_idx / len(data_loader), loss.item()))
-            if args.dry_run:
-                break
+        #if batch_idx % args.log_interval == 0:
+        #    print('{}\tTrain Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                ###pid, epoch, batch_idx * len(data), len(train_loader.dataset) * len(data),
+                ###pid, epoch, batch_idx * len(data), len(data),
+        #        pid, epoch, batch_idx * len(data), len(data),                
+        #        100. * batch_idx * len(data) / len(train_loader.dataset), loss.item()))
+
+        #    if args.dry_run:
+        #        break
 
 def test_epoch(model, device, data_loader):
     model.eval()
@@ -262,6 +265,6 @@ if __name__ == '__main__':
     # Once training is complete, we can test the model
     model.load_state_dict(model_states[best_processor])
     test_accuracy = test(args, model, device, dataset2, dataloader_kwargs)
-    print("The global accuracy of", test_accuracy, " was reached using the model of ", best_processor, "for fold ", best_fold)
+    print("The global accuracy of", test_accuracy, " was reached using the model of best processor ", best_processor, "for fold ", best_fold)
 
     print("--- Total procesing time is %s seconds ---" % (init_time - time.time()))
