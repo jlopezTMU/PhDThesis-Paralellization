@@ -1,4 +1,5 @@
-# This version adds the SUM of training times!
+# This version took out the time/num processors, still not convinced
+
 
 import torch
 import torch.nn as nn
@@ -106,9 +107,8 @@ def main():
 
     #
     print(f"Total processing time for all folds across for all {args.processors} processors:\
-            {total_elapsed_time/args.processors:.4f} seconds and total time is {total_elapsed_time:4f} seconds")
-    print(f"Average validation accuracy across folds: {sum(accuracies) / len(accuracies) * 100:.4f}%")
+            and total time is {total_elapsed_time:4f} seconds \
+            Average validation accuracy across folds: {sum(accuracies) / len(accuracies) * 100:.4f}%")
 
 if __name__ == '__main__':
     main()
-
