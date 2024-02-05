@@ -1,0 +1,20 @@
+For Debian/Ubuntu (APT)
+Generate a list of installed packages:
+
+sh
+Copy code
+dpkg --get-selections > installed_packages.txt
+Backup this list to a safe location.
+
+To restore/install packages on another system/container from the list:
+
+Ensure the list installed_packages.txt is available on the target system/container.
+Update the package database:
+sh
+Copy code
+sudo apt-get update
+Restore the packages using the list:
+sh
+Copy code
+sudo dpkg --set-selections < installed_packages.txt
+sudo apt-get dselect-upgrade
