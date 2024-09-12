@@ -1,0 +1,26 @@
+import torchvision.datasets as datasets
+import torchvision.transforms as transforms
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Define the transformation (normalization) used in your original program
+transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
+
+# Load the MNIST dataset from the ./data directory
+mnist_dataset = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
+
+# Extract the first 10 rows (samples) from the dataset
+first_10_rows = [mnist_dataset[i] for i in range(10)]
+
+# Display the first 10 images and their labels
+for i, (image, label) in enumerate(first_10_rows):
+    # Convert the image tensor to a numpy array for visualization
+    image_np = image.squeeze().numpy()  # Squeeze removes the extra channel dimension
+
+    # Display the image
+    plt.imshow(image_np, cmap='gray')
+    plt.title(f"Row {i+1}: Label = {label}")
+    plt.axis('off')  # Turn off the axis
+    plt.draw()  # Draw the current figure
+    plt.pause(2)  # Display each image for 2 seconds
+    plt.clf()  # Clear the figure for the next image
