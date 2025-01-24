@@ -9,10 +9,7 @@ import time
 import os
 import numpy as np
 
-# We import vgg11 for CIFAR10:
-from torchvision.models import vgg11
-
-from train_p8020_EXT import train
+from train_p8020 import train
 
 from sklearn.model_selection import train_test_split
 
@@ -20,7 +17,7 @@ from sklearn.model_selection import train_test_split
 set_start_method('spawn', force=True)
 
 ############################################
-# LeNet definition for MNIST (unchanged)
+# LeNet definition (unchanged)
 ############################################
 class LeNet(nn.Module):
     def __init__(self):
@@ -40,20 +37,31 @@ class LeNet(nn.Module):
         x = self.fc3(x)
         return x
 
+############################################
+# (Minimal imports for the VGG-11 model)
+############################################
+from torchvision.models import vgg11
+
 def parallel_kfold():
     kf = KFold(n_splits=args.folds)
-    start_time = time.time()  # Start the timer before initializing the pool
+    start_time = time.time()
 
-    # Parallel cross-validation
+    # GPU distribution logic (unchanged)
+    available_gpus = torch.cuda.device_count()
+    if args.processors > available_gpus:
+        raise ValueError(f"Requested {args.processors} processors, but only {available_gpus} GPUs are available.")
+
+    gpu_assignments = [f"cuda:{i}" for i in range(args.processors)]
+
     with Pool(processes=args.processors) as pool:
         results = pool.starmap(
             train,
-            [(fold, train_idx, val_idx, X, y, device, args)
+            [(fold, train_idx, val_idx, X, y, gpu_assignments[fold % args.processors], args)
              for fold, (train_idx, val_idx) in enumerate(kf.split(X))]
         )
 
-    end_time = time.time()  # Stop the timer after the processing finishes
-    elapsed_time = end_time - start_time  # Total elapsed time across processors
+    end_time = time.time()
+    elapsed_time = end_time - start_time
     return results, elapsed_time
 
 def test_model(best_model, X_test, y_test, device):
@@ -72,29 +80,29 @@ def main():
     print(f"*** The dataset has been split in 80% training with {len(y_train)} records "
           f"and 20% testing with {len(y_test)} records ***")
 
-    start_time_total = time.time()  # Start the total processing timer
+    start_time_total = time.time()
 
     if args.folds < 2:
         print("Folds is set to 1. Skipping cross-validation and training on the entire training set.")
 
-        # Choose the architecture based on --ds
-        if args.ds.upper() == "MNIST":
+        # ---- FIX: Choose the correct architecture based on the dataset ----
+        if args.ds.upper() == 'MNIST':
             model = LeNet().to(device)
-        else:
-            # For CIFAR10, use VGG-11
+        elif args.ds.upper() == 'CIFAR10':
             model = vgg11(num_classes=10).to(device)
+        else:
+            raise ValueError("Unsupported dataset. Use '--ds MNIST' or '--ds CIFAR10'.")
+        # -------------------------------------------------------------------
 
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(model.parameters(), lr=args.lr)
 
-        # Convert tensors and move to device
-        X_train_tensor = torch.tensor(X_train, dtype=torch.float32).to(device)
-        y_train_tensor = torch.tensor(y_train, dtype=torch.int64).to(device)
+        X_train_t = torch.tensor(X_train, dtype=torch.float32).to(device)
+        y_train_t = torch.tensor(y_train, dtype=torch.int64).to(device)
 
-        train_dataset = torch.utils.data.TensorDataset(X_train_tensor, y_train_tensor)
+        train_dataset = torch.utils.data.TensorDataset(X_train_t, y_train_t)
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
 
-        # Train
         start_time_train = time.time()
         for epoch in range(args.epochs):
             for batch_X, batch_y in train_loader:
@@ -107,7 +115,6 @@ def main():
 
         elapsed_time_train = end_time_train - start_time_train
 
-        # Test
         start_time_test = time.time()
         test_accuracy = test_model(model, X_test, y_test, device)
         end_time_test = time.time()
@@ -117,7 +124,7 @@ def main():
               f"Testing time: {elapsed_time_test:.4f} seconds.")
         print(f"Testing accuracy: {test_accuracy * 100:.4f}%")
     else:
-        # Perform k-fold cross-validation in parallel
+        # Usual parallel k-fold cross-validation
         results, total_elapsed_time = parallel_kfold()
 
         losses = [result[0] for result in results]
@@ -135,32 +142,31 @@ def main():
     print(f"Total processing time: {total_processing_time:.4f} seconds.")
 
 if __name__ == '__main__':
-    # Command line arguments
     parser = argparse.ArgumentParser(description="Parallel k-fold cross-validation on MNIST or CIFAR10")
     parser.add_argument('--gpu', action='store_true', help='Use GPU if available')
-    parser.add_argument('--processors', type=int, default=2, help='Number of processors for parallel processing')
+    parser.add_argument('--processors', type=int, default=2, help='Number of processors (1 to number of GPUs)')
     parser.add_argument('--folds', type=int, default=10, help='Number of k-folds for cross-validation')
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training')
     parser.add_argument('--epochs', type=int, default=10, help='Number of epochs')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR', help='Learning rate (default: 0.01)')
-
-    # **New argument for dataset selection**
-    parser.add_argument('--ds', type=str, default='MNIST',
-                        help='Dataset to use: MNIST or CIFAR10')
+    parser.add_argument('--ds', type=str, default='MNIST', help='Dataset to use: MNIST or CIFAR10')
 
     args = parser.parse_args()
 
-    # Set device to GPU if available and requested
+    if args.gpu:
+        available_gpus = torch.cuda.device_count()
+        if args.processors > available_gpus:
+            raise ValueError(f"Requested {args.processors} processors, but only {available_gpus} GPUs are available.")
+
     device = torch.device("cuda" if args.gpu and torch.cuda.is_available() else "cpu")
 
-    # Load the chosen dataset
+    # Load dataset according to --ds argument
     if args.ds.upper() == 'MNIST':
         transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.5,), (0.5,))
         ])
-        dataset = datasets.MNIST(root='/root/sandbox/MASCIFAROK/MASOK/data', train=True, transform=transform, download=True)
-        ## INGESTS THE DATASET CIFAR FROM MASCIFAR DATA DIRECTORY!!!
+        dataset = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
         X = dataset.data.numpy().reshape(-1, 1, 28, 28) / 255.0
         y = dataset.targets.numpy()
     elif args.ds.upper() == 'CIFAR10':
@@ -169,8 +175,6 @@ if __name__ == '__main__':
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
         dataset = datasets.CIFAR10(root='./data', train=True, transform=transform, download=True)
-        # CIFAR-10 data is HxWxC in dataset.data
-        # Reshape to NxCxHxW and scale to [0,1]
         X = dataset.data.transpose((0, 3, 1, 2)) / 255.0
         y = np.array(dataset.targets)
     else:
