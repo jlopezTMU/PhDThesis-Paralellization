@@ -6,6 +6,10 @@ import torch
 import random
 import time
 
+import numpy as np
+
+from partition_utils import make_dirichlet_cifar10_indices
+
 ## HIERARCHICAL
 
 class ParallelizationModel(Model):
@@ -86,33 +90,70 @@ class ParallelizationModel(Model):
                 print(f"Node {i + 1} compute capacity (uniform {low}..{high}): {agent.compute_capacity:.3f}")
 
         else:
-            # Existing array slicing behavior (MNIST/CIFAR)
-            train_per_agent = total_train // self.num_processors
+###
+
+            partition_mode = getattr(self.args, "partition", "iid")
+
+            if partition_mode == "nonIID_cifar10":
+                if self.args.ds != "CIFAR10":
+                    raise ValueError("nonIID_cifar10 is only supported for CIFAR10.")
+                
+                train_shards = make_dirichlet_cifar10_indices(
+                    Training_lbls,
+                    self.num_processors,
+                    alpha=getattr(self.args, "dirichlet_alpha", 0.5),
+                    seed=getattr(self.args, "partition_seed", 42)
+                    )
+
+            else:
+                train_per_agent = total_train // self.num_processors
+                train_shards = []
+
+                for i in range(self.num_processors):
+                    train_start = i * train_per_agent
+
+                    if i < self.num_processors - 1:
+                        train_end = (i + 1) * train_per_agent
+                    else:
+                        train_end = total_train
+
+                    train_shards.append(
+                        np.arange(train_start, train_end)
+                    )
+
             test_per_agent = total_test // self.num_processors
 
             for i in range(self.num_processors):
-                train_start = i * train_per_agent
-                train_end = (i + 1) * train_per_agent if i < self.num_processors - 1 else total_train
+                train_idx = train_shards[i]
 
                 test_start = i * test_per_agent
-                test_end = (i + 1) * test_per_agent if i < self.num_processors - 1 else total_test
+
+                if i < self.num_processors - 1:
+                    test_end = (i + 1) * test_per_agent
+                else:
+                    test_end = total_test
 
                 agent = ProcessorAgent(
                     unique_id=i,
                     model=self,
-                    Training_ds=Training_ds[train_start:train_end],
-                    Training_lbls=Training_lbls[train_start:train_end],
+                    Training_ds=Training_ds[train_idx],
+                    Training_lbls=np.asarray(Training_lbls)[train_idx],
                     Testing_ds=Testing_ds[test_start:test_end],
                     Testing_lbls=Testing_lbls[test_start:test_end],
                     device=self.device,
                     args=self.args
                 )
+
                 self.schedule.add(agent)
 
                 agent.compute_capacity = capacities[i]
-                print(f"Node {i + 1} compute capacity (uniform {low}..{high}): {agent.compute_capacity:.3f}")
 
-    ### END replaced
+                print(
+                    f"Node {i + 1} compute capacity "
+                    f"(uniform {low}..{high}): "
+                    f"{agent.compute_capacity:.3f}"
+                )
+###
 
     def _average_state_dicts(self, state_dicts):
         avg_state = {}
