@@ -89,17 +89,35 @@ def main():
                         help='Activation function to use (default: RELU)')
 ###
     parser.add_argument("--dataset", type=str, default="MNIST",
-                    choices=["MNIST", "CIFAR10", "CIFAR100", "UA_DETRAC"],
-                    help="Dataset to use")
+                choices=["MNIST", "CIFAR10", "CIFAR100", "UA_DETRAC"],
+                help="Dataset to use")
     parser.add_argument("--ua_resize", type=int, default=224,
                     help="Resize UA-DETRAC frames to NxN (e.g., 224).")
     parser.add_argument("--ua_limit", type=int, default=0,
-                    help="If >0, limit UA-DETRAC samples for smoke tests (e.g., 2000).")
+                help="If >0, limit UA-DETRAC samples for smoke tests (e.g., 2000).")
     parser.add_argument("--ua_use_imagenet_norm", action="store_true",
                     help="Use ImageNet normalization (recommended if using pretrained models).")
+    parser.add_argument("--partition", type=str, default="iid",
+                        choices=["iid", "nonIID_cifar10"],
+                        help="Data partition mode: iid or nonIID_cifar10.")
+    parser.add_argument("--dirichlet_alpha", type=float, default=0.5,
+                        help="Dirichlet alpha for non-IID CIFAR-10 partitioning.")
+    parser.add_argument("--partition_seed", type=int, default=42,
+                        help="Random seed for non-IID partitioning.")
 
     args = parser.parse_args()
     args.ds = args.dataset
+
+    if args.partition == "nonIID_cifar10":
+        if args.ds != "CIFAR10":
+            raise ValueError("--partition nonIID_cifar10 is only supported with --dataset CIFAR10.")
+
+        if args.processors != 4:
+            raise ValueError("--partition nonIID_cifar10 is only supported with --processors 4.")
+
+        if args.dirichlet_alpha <= 0:
+            raise ValueError("--dirichlet_alpha must be > 0.")
+ ###
 
     args.imagenet_pretrained = False
     if args.ds == "UA_DETRAC":
