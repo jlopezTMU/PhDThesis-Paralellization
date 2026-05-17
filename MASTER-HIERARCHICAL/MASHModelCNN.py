@@ -277,54 +277,40 @@ class ParallelizationModel(Model):
 
         print(f"Cumulative Communication Cost until now: {self.total_comm_cost} bytes")
 
+    ###
     def run_model(self, num_steps):
         """
         Run SYNC distributed training for num_steps GLOBAL epochs.
-
-        IMPORTANT:
-        - Do NOT call agent.step() directly here.
-        - self.step() is the authoritative per-epoch method because it:
-            (1) steps the Mesa schedule (agents do 1 local epoch)
-            (2) calls synchronize_weights() (global averaging + comm accounting)
-            (3) prints epoch metrics and updates totals
+        Final accuracy = last epoch accuracy only.
+        GRAND TOTAL is used only for time and communication.
         """
 
-        # GRAND totals (test)
-        total_correct_items = 0
-        total_test_items = 0
-
-        # GRAND totals (training)
-        total_train_correct = 0
-        total_train_items = 0
+        final_test_correct = 0
+        final_test_total = 0
+        final_train_correct = 0
+        final_train_total = 0
 
         for epoch in range(1, num_steps + 1):
             print(f"\n** Epoch {epoch} of {num_steps} starts **")
 
-            # Run one GLOBAL epoch (local training + sync + logging)
             self.step()
 
-            # ---- Aggregate accuracy snapshots from agents (after this epoch) ----
-            correct_this_epoch = sum(a.correct_classifications for a in self.schedule.agents)
-            test_this_epoch = sum(a.test_set_size for a in self.schedule.agents)
+            final_test_correct = sum(a.correct_classifications for a in self.schedule.agents)
+            final_test_total = sum(a.test_set_size for a in self.schedule.agents)
 
-            train_correct_this_epoch = sum(getattr(a, "train_correct", 0) for a in self.schedule.agents)
-            train_total_this_epoch = sum(getattr(a, "train_total", 0) for a in self.schedule.agents)
+            final_train_correct = sum(getattr(a, "train_correct", 0) for a in self.schedule.agents)
+            final_train_total = sum(getattr(a, "train_total", 0) for a in self.schedule.agents)
 
-            total_correct_items += correct_this_epoch
-            total_test_items += test_this_epoch
-            total_train_correct += train_correct_this_epoch
-            total_train_items += train_total_this_epoch
+            train_acc = (100.0 * final_train_correct / final_train_total) if final_train_total else 0.0
+            print(f"TOTAL Training Accuracy after epoch: {final_train_correct}/{final_train_total} = {train_acc:.2f}%")
 
-            train_acc = (100.0 * train_correct_this_epoch / train_total_this_epoch) if train_total_this_epoch else 0.0
-            print(f"TOTAL Training Accuracy after epoch: {train_correct_this_epoch}/{train_total_this_epoch} = {train_acc:.2f}%")
+        final_test_acc = (100.0 * final_test_correct / final_test_total) if final_test_total else 0.0
+        final_train_acc = (100.0 * final_train_correct / final_train_total) if final_train_total else 0.0
 
-        grand_test_acc = (100.0 * total_correct_items / total_test_items) if total_test_items else 0.0
-        print(f"\nGRAND TOTAL Final Accuracy: {total_correct_items}/{total_test_items} = {grand_test_acc:.2f}%")
-
+        print(f"\nFINAL Test Accuracy: {final_test_correct}/{final_test_total} = {final_test_acc:.2f}%")
         print(f"GRAND TOTAL Communication Cost over all epochs: {getattr(self, 'total_comm_cost', 0)} bytes")
         print(f"GRAND TOTAL Processing Time (compute only): {getattr(self, 'total_processing_time', 0.0):.4f} seconds")
         print(f"GRAND TOTAL Processing end-to-end time: {getattr(self, 'total_e2e_time', 0.0):.4f} seconds")
-
-        grand_train_acc = (100.0 * total_train_correct / total_train_items) if total_train_items else 0.0
-        print(f"GRAND TOTAL Training Accuracy: {total_train_correct}/{total_train_items} = {grand_train_acc:.2f}%")
-
+        print(f"FINAL Training Accuracy: {final_train_correct}/{final_train_total} = {final_train_acc:.2f}%")
+        ###
+        

@@ -283,12 +283,12 @@ class ParallelizationModel(Model):
 
         # --- Final GRAND TOTALS ---
         grand_test_acc = 100.0 * total_correct / total_test_examples if total_test_examples else 0.0
-        print(f"\nGRAND TOTAL Final Accuracy: {total_correct}/{total_test_examples} = {grand_test_acc:.2f}%")
+        print(f"FINAL Test Accuracy: {total_correct}/{total_test_examples} = {grand_test_acc:.2f}%")
         print(f"GRAND TOTAL Communication Cost over all epochs: {total_comm_cost} bytes")
         print(f"GRAND TOTAL Communication Time over all epochs: {total_comm_time:.4f} seconds")
         print(f"GRAND TOTAL Processing Time (compute only): {total_compute_time:.4f} seconds")
         print(f"GRAND TOTAL Processing end-to-end time: {total_e2e_time:.4f} seconds")
 
         grand_train_acc = 100.0 * train_correct_this_epoch / train_total_this_epoch if train_total_this_epoch else 0.0
-        print(f"GRAND TOTAL Training Accuracy: {train_correct_this_epoch}/{train_total_this_epoch} = {grand_train_acc:.2f}%")
+        print(f"FINAL Training Accuracy: {train_correct_this_epoch}/{train_total_this_epoch} = {grand_train_acc:.2f}%")
              
