@@ -222,7 +222,12 @@ def train_simulated(
 
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9 if args.optimizer == 'SGDM' else 0.0)
+    optimizer = optim.SGD(
+    model.parameters(),
+    lr=args.lr,
+    momentum=0.9 if args.optimizer == 'SGDM' else 0.0,
+    weight_decay=args.weight_decay if args.optimizer == 'SGDM' else 0.0
+    )
 
     running_loss = 0.0
     total_samples = 0

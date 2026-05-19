@@ -67,7 +67,8 @@ def main():
     parser.add_argument('--processors', type=int, default=4, help='Number of simulated processors (nodes) to use')
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training')
     parser.add_argument('--epochs', type=int, default=10, help='Number of epochs')
-    parser.add_argument('--lr', type=float, default=0.01, metavar='LR', help='Learning rate (default: 0.01)')
+    parser.add_argument('--lr', type=float, default=0.01, metavar='LR', help='Learning rate')
+    parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay')  
     parser.add_argument('--patience', type=int, default=5, help='Patience for early stopping (default: 5)')
     parser.add_argument('--latency', type=check_latency_range, default="1,10", help="Latency range in ms as 'x,y'")
 
