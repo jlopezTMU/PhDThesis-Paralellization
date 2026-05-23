@@ -197,17 +197,40 @@ def main():
         X = dataset.data.transpose((0, 3, 1, 2))
         y = dataset.targets
     elif args.ds == 'CIFAR100':  
-        transform = transforms.Compose([
+        train_transform = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # Common for CIFAR100, can be changed
+            transforms.Normalize((0.5071, 0.4867, 0.4408),
+                                 (0.2675, 0.2565, 0.2761))
         ])
-        dataset = datasets.CIFAR100(root=DATA_ROOT, train=True, transform=transform, download=True)
-        model_arch = 'ResNet18'
-        num_classes = 100
-        X = dataset.data.transpose((0, 3, 1, 2))
-        y = dataset.targets
+
+        test_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5071, 0.4867, 0.4408),
+                                 (0.2675, 0.2565, 0.2761))
+        ])
+
+        train_ds = datasets.CIFAR100(
+            root=DATA_ROOT,
+            train=True,
+            transform=train_transform,
+            download=True
+        )
+
+        test_ds = datasets.CIFAR100(
+            root=DATA_ROOT,
+            train=False,
+            transform=test_transform,
+            download=True
+        )
+
+        Training_ds, Training_lbls = train_ds, list(range(len(train_ds)))
+        Testing_ds, Testing_lbls = test_ds, list(range(len(test_ds)))
+
+        model_arch, num_classes = 'ResNet18', 100
     ###
-    elif args.ds == 'UA_DETRAC':
+    if args.ds not in ['UA_DETRAC', 'CIFAR100']:
 
         from trainMASHCNN import UADetracSceneDataset  
 

@@ -209,20 +209,43 @@ def main():
         Testing_ds, Testing_lbls = val_ds, None
         model_arch, num_classes = 'ResNet18', 3
     else:
-        transform = transforms.Compose([
+        train_transform = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))
+            transforms.Normalize((0.5071, 0.4867, 0.4408),
+                                 (0.2675, 0.2565, 0.2761))
         ])
-        dataset = datasets.CIFAR100(root=DATA_ROOT, train=True,
-                                    transform=transform, download=True)
+
+        test_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5071, 0.4867, 0.4408),
+                                 (0.2675, 0.2565, 0.2761))
+        ])
+
+        train_ds = datasets.CIFAR100(
+            root=DATA_ROOT,
+            train=True,
+            transform=train_transform,
+            download=True
+        )
+
+        test_ds = datasets.CIFAR100(
+            root=DATA_ROOT,
+            train=False,
+            transform=test_transform,
+            download=True
+        )
+
+        Training_ds, Training_lbls = train_ds, list(range(len(train_ds)))
+        Testing_ds, Testing_lbls = test_ds, list(range(len(test_ds)))
+
         model_arch, num_classes = 'ResNet18', 100
-        X = dataset.data.transpose((0,3,1,2))
-        y = torch.as_tensor(getattr(dataset, "targets", getattr(dataset, "labels", []))).cpu().numpy()
 
 
     # Split data
     print("Using dataset:", args.ds)
-    if args.ds != 'UA_DETRAC':
+    if args.ds not in ['UA_DETRAC', 'CIFAR100']:
         Training_ds, Testing_ds, Training_lbls, Testing_lbls = \
             train_test_split(X, y, test_size=0.2, random_state=42)
 
