@@ -230,7 +230,7 @@ def main():
 
         model_arch, num_classes = 'ResNet18', 100
     ###
-    if args.ds not in ['UA_DETRAC', 'CIFAR100']:
+    elif args.ds == 'UA_DETRAC':
 
         from trainMASHCNN import UADetracSceneDataset  
 
@@ -273,7 +273,7 @@ def main():
     
     # Split data
     print("Using dataset:", args.ds)
-    if args.ds != 'UA_DETRAC':
+    if args.ds not in ['UA_DETRAC', 'CIFAR100']:
         Training_ds, Testing_ds, Training_lbls, Testing_lbls = \
             train_test_split(X, y, test_size=0.2, random_state=42)
 
