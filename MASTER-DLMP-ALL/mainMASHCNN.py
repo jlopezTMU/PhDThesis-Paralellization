@@ -106,11 +106,44 @@ def main():
     parser.add_argument("--partition_seed", type=int, default=42,
                         help="Random seed for non-IID partitioning.")
 
+    args = parser.parse_args()
+    args.ds = args.dataset
+
+    if args.ds == "UA_DETRACnonIID":
+
+        if args.processors != 3:
+            raise ValueError(
+                "--dataset UA_DETRACnonIID requires --processors 3."
+            )
+
+        args.partition = "nonIID_uadetrac"
+
+    if args.partition == "nonIID_cifar10":
+        if args.ds != "CIFAR10":
+            raise ValueError(
+                "--partition nonIID_cifar10 is only supported with --dataset CIFAR10."
+            )
+
+        if args.processors != 4:
+            raise ValueError(
+                "--partition nonIID_cifar10 is only supported with --processors 4."
+            )
+
+        if args.dirichlet_alpha <= 0:
+            raise ValueError("--dirichlet_alpha must be > 0.")
+
+    args.imagenet_pretrained = False
+
+    if args.ds in ("UA_DETRAC", "UA_DETRACnonIID"):
+        args.imagenet_pretrained = True
+        args.ua_use_imagenet_norm = True
+
 #------------------------------------------------------ 
 # Assumption: uniform network bandwidth used to convert
 # communication traffic (bytes) into transmission time.
 #------------------------------------------------------ 
     print(f"Assumption: uniform bandwidth = {args.net_bw_mbps} Mbps")
+
     DATA_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data"))
 
     use_gpu = False
