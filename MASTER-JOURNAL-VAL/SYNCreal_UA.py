@@ -1,5 +1,6 @@
 import argparse
 import os
+import random
 import subprocess
 import time
 from pathlib import Path
@@ -136,6 +137,15 @@ def single_node_train(node_id: int, X_train: np.ndarray, y_train: np.ndarray, X_
                       device_str: str, ds: str, args):
     device = torch.device(device_str)
     print(f"*** Using device: {device_str} for Node {node_id} ***")
+
+    seed = args.seed
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(seed)
+
     model = build_model(ds).to(device)
     criterion = nn.CrossEntropyLoss()
 
@@ -188,6 +198,14 @@ def distributed_train_worker(rank, args, X_train_global, y_train_global, X_val_g
     import torch.distributed as dist
 
     world_size = args.processors
+
+    seed = args.seed + rank
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if args.gpu and torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
     backend = "nccl" if args.gpu and torch.cuda.is_available() else "gloo"
     dist.init_process_group(
         backend=backend,
@@ -295,11 +313,17 @@ def average_model_parameters(model):
     import torch.distributed as dist
 
     world_size = dist.get_world_size()
-    with torch.no_grad():
-        for param in model.parameters():
-            dist.all_reduce(param.data, op=dist.ReduceOp.SUM)
-            param.data /= world_size
 
+    with torch.no_grad():
+        for tensor in model.state_dict().values():
+            if torch.is_floating_point(tensor):
+                dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+                tensor /= world_size
+            else:
+                averaged_tensor = tensor.to(torch.float32)
+                dist.all_reduce(averaged_tensor, op=dist.ReduceOp.SUM)
+                averaged_tensor /= world_size
+                tensor.copy_(averaged_tensor.to(tensor.dtype))
 
 def train_one_epoch_loader(model, train_loader, device, optimizer, criterion):
     model.train()
@@ -350,7 +374,7 @@ def single_node_train_uadetrac(device_str: str, args):
     model = build_model("UA_DETRAC").to(device)
 
     criterion = nn.CrossEntropyLoss()
-
+    
     print(f"Training with {len(train_ds)} UA-DETRAC images, validating with {len(val_ds)} images")
 
     start_time = time.time()
@@ -397,6 +421,13 @@ def distributed_train_worker_uadetrac(rank, args, train_index_chunks, val_index_
     device = torch.device(device_list[rank])
     if device.type == "cuda":
         torch.cuda.set_device(device)
+
+    seed = args.seed + rank
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(seed)
 
     train_ds, val_ds = build_uadetrac_datasets(args)
 
@@ -672,6 +703,7 @@ def main():
     parser.add_argument("--lr", type=float, default=0.01, help="Learning rate")
     parser.add_argument("--momentum", type=float, default=0.9, help="Momentum for SGD optimizer")
     parser.add_argument("--weight_decay", type=float, default=0.001, help="Weight decay for SGD optimizer")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")  
     parser.add_argument("--ds", type=str, default="MNIST", help="MNIST, CIFAR10, or UA_DETRAC")
     parser.add_argument("--optuna", action="store_true", help="Use Optuna HPO to optimize LR and momentum")
 

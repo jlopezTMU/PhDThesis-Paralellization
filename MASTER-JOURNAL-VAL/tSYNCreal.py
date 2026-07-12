@@ -56,11 +56,16 @@ def train_8args(fold, train_idx, val_idx, X_train_global, y_train_global, X_val_
     - each rank gets a shard of the global train and global validation sets
     - one local epoch then synchronous weight averaging
     - optimizer is re-created each epoch to match DLMP train_simulated() behavior
-    - communication accounting matches DLMP SYNC: 2 * (n-1) * model_size per node per epoch
+    - communication accounting uses 2 * model_size per node per epoch, producing 2nM total per epoch
     """
     print(f"Process {os.getpid()} is using device: {device}", flush=True)
 
     model = _build_model(ds, device)
+
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        for tensor in model.state_dict().values():
+            torch.distributed.broadcast(tensor, src=0)
+
     print(f"******* Model size: {get_model_size(model):.2f} MB *********", flush=True)
 
     criterion = nn.CrossEntropyLoss()
@@ -82,7 +87,7 @@ def train_8args(fold, train_idx, val_idx, X_train_global, y_train_global, X_val_
 
     for epoch in range(args.epochs):
         # Match DLMP SYNC: optimizer state does NOT persist across global epochs.
-        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
         model.train()
         for batch_X, batch_y in train_loader:
@@ -95,11 +100,21 @@ def train_8args(fold, train_idx, val_idx, X_train_global, y_train_global, X_val_
         epoch_comm_cost = 0
         if torch.distributed.is_available() and torch.distributed.is_initialized():
             world_size = torch.distributed.get_world_size()
+
             for param in model.parameters():
                 param_bytes = param.nelement() * param.element_size()
                 epoch_comm_cost += 2 * param_bytes
-                torch.distributed.all_reduce(param.data, op=torch.distributed.ReduceOp.SUM)
-                param.data /= world_size
+
+            with torch.no_grad():
+                for tensor in model.state_dict().values():
+                    if torch.is_floating_point(tensor):
+                        torch.distributed.all_reduce(tensor, op=torch.distributed.ReduceOp.SUM)
+                        tensor /= world_size
+                    else:
+                        averaged_tensor = tensor.to(torch.float32)
+                        torch.distributed.all_reduce(averaged_tensor, op=torch.distributed.ReduceOp.SUM)
+                        averaged_tensor /= world_size
+                        tensor.copy_(averaged_tensor.to(tensor.dtype))
 
         cumulative_cost += epoch_comm_cost
         print(f"Process {os.getpid()} - Epoch {epoch + 1} communication cost: {epoch_comm_cost} bytes", flush=True)

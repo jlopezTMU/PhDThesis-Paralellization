@@ -45,9 +45,11 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data import DataLoader, Dataset, Subset
-from torchvision import transforms
-from torchvision.models import ResNet18_Weights, resnet18
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, Dataset, Subset, TensorDataset
+from torchvision import datasets, transforms
+from torchvision.models import ResNet18_Weights, resnet18, vgg11
+from tSYNCreal import LeNet
 
 
 CLASS_TO_ID = {"mild": 0, "medium": 1, "congested": 2}
@@ -163,16 +165,96 @@ def split_indices(length: int, world_size: int, rank: int) -> List[int]:
     shards = np.array_split(np.arange(length, dtype=np.int64), world_size)
     return shards[rank].tolist()
 
+def build_array_datasets(args: argparse.Namespace):
+    data_root = Path(__file__).resolve().parent.parent / "data"
+    ds = args.ds.upper()
 
-def create_model(device: torch.device) -> nn.Module:
-    model = resnet18(weights=ResNet18_Weights.DEFAULT)
-    model.fc = nn.Linear(model.fc.in_features, 3)
-    return model.to(device)
+    if ds == "MNIST":
+        dataset = datasets.MNIST(
+            root=str(data_root),
+            train=True,
+            download=True,
+        )
+        X = dataset.data.numpy().astype(np.float32)
+        y = dataset.targets.numpy().astype(np.int64)
+
+    elif ds == "CIFAR10":
+        dataset = datasets.CIFAR10(
+            root=str(data_root),
+            train=True,
+            download=True,
+        )
+        X = dataset.data.transpose(0, 3, 1, 2).astype(np.float32)
+        y = np.asarray(dataset.targets, dtype=np.int64)
+
+    elif ds == "CIFAR100":
+        dataset = datasets.CIFAR100(
+            root=str(data_root),
+            train=True,
+            download=True,
+        )
+        X = dataset.data.transpose(0, 3, 1, 2).astype(np.float32)
+        y = np.asarray(dataset.targets, dtype=np.int64)
+
+    else:
+        raise ValueError("build_array_datasets supports only MNIST, CIFAR10, and CIFAR100.")
+
+    X_train, X_val, y_train, y_val = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42,
+    )
+
+    X_train_t = torch.tensor(X_train, dtype=torch.float32)
+    X_val_t = torch.tensor(X_val, dtype=torch.float32)
+    y_train_t = torch.tensor(y_train, dtype=torch.long)
+    y_val_t = torch.tensor(y_val, dtype=torch.long)
+
+    if ds == "MNIST":
+        X_train_t = X_train_t.unsqueeze(1)
+        X_val_t = X_val_t.unsqueeze(1)
+
+    train_dataset = TensorDataset(X_train_t, y_train_t)
+    validation_dataset = TensorDataset(X_val_t, y_val_t)
+
+    return train_dataset, validation_dataset
+
+def create_model(ds: str, device: torch.device) -> nn.Module:
+    ds = ds.upper()
+
+    if ds == "MNIST":
+        return LeNet().to(device)
+
+    if ds == "CIFAR10":
+        model = vgg11(weights=None)
+        model.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        model.classifier = nn.Sequential(
+            nn.Linear(512, 4096),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(4096, 10),
+        )
+        return model.to(device)
+
+    if ds == "CIFAR100":
+        model = resnet18(weights=None)
+        model.fc = nn.Linear(model.fc.in_features, 100)
+        return model.to(device)
+
+    if ds == "UA_DETRAC":
+        model = resnet18(weights=ResNet18_Weights.DEFAULT)
+        model.fc = nn.Linear(model.fc.in_features, 3)
+        return model.to(device)
+
+    raise ValueError("Unsupported dataset. Use MNIST, CIFAR10, CIFAR100, or UA_DETRAC.")
 
 
 def state_size_bytes(model: nn.Module) -> int:
-    # Include parameters and buffers because the complete state_dict is exchanged.
-    return sum(t.numel() * t.element_size() for t in model.state_dict().values())
+    return sum(p.numel() * p.element_size() for p in model.parameters())
 
 
 @torch.no_grad()
@@ -312,37 +394,43 @@ def worker(
             world_size=world_size,
         )
 
-    resize = args.ua_resize
-    transform = transforms.Compose(
-        [
-            transforms.Resize((resize, resize)),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225],
-            ),
-        ]
-    )
+    if args.ds.upper() == "UA_DETRAC":
+        resize = args.ua_resize
+        transform = transforms.Compose(
+            [
+                transforms.Resize((resize, resize)),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225],
+                ),
+            ]
+        )
 
-    train_dataset = UADetracSceneDataset(
-        csv_path=args.csv_path,
-        dataset_root=args.dataset_root,
-        split="train",
-        transform=transform,
-        limit=args.ua_limit,
-    )
-    validation_dataset = UADetracSceneDataset(
-        csv_path=args.csv_path,
-        dataset_root=args.dataset_root,
-        split="val",
-        transform=transform,
-        limit=args.ua_limit,
-    )
+        train_dataset = UADetracSceneDataset(
+            csv_path=args.csv_path,
+            dataset_root=args.dataset_root,
+            split="train",
+            transform=transform,
+            limit=args.ua_limit,
+        )
+
+        validation_dataset = UADetracSceneDataset(
+            csv_path=args.csv_path,
+            dataset_root=args.dataset_root,
+            split="val",
+            transform=transform,
+            limit=args.ua_limit,
+        )
+
+    else:
+        train_dataset, validation_dataset = build_array_datasets(args)
 
     train_indices = split_indices(len(train_dataset), world_size, rank)
     validation_indices = split_indices(len(validation_dataset), world_size, rank)
 
     workers = max(0, args.num_workers)
+
     train_loader = DataLoader(
         Subset(train_dataset, train_indices),
         batch_size=args.batch_size,
@@ -351,6 +439,7 @@ def worker(
         pin_memory=use_cuda,
         persistent_workers=(workers > 0),
     )
+
     validation_loader = DataLoader(
         Subset(validation_dataset, validation_indices),
         batch_size=args.batch_size,
@@ -360,10 +449,12 @@ def worker(
         persistent_workers=(workers > 0),
     )
 
-    model = create_model(device)
+    model = create_model(args.ds, device)
+
     if world_size > 1:
         for tensor in model.state_dict().values():
             dist.broadcast(tensor, src=0)
+
     criterion = nn.CrossEntropyLoss()
 
     model_bytes = state_size_bytes(model)
@@ -372,9 +463,9 @@ def worker(
 
     if rank == 0:
         if world_size == 1:
-            print(f"*** Using device: {device} for UA-DETRAC single-node P2P validation ***")
+            print(f"*** Using device: {device} for {args.ds.upper()} single-node P2P validation ***")
         else:
-            print(f"*** Running UA-DETRAC REAL P2P-ring with {world_size} processors ***")
+            print(f"*** Running {args.ds.upper()} REAL P2P-ring with {world_size} processors ***")
 
     print(
         f"Process {os.getpid()} (Rank {rank}) training on "
@@ -447,8 +538,12 @@ def worker(
 def main() -> None:
     args = parse_args()
 
-    if args.ds.upper() != "UA_DETRAC":
-        raise ValueError("This validation script currently supports only --ds UA_DETRAC.")
+    supported_datasets = {"MNIST", "CIFAR10", "CIFAR100", "UA_DETRAC"}
+
+    if args.ds.upper() not in supported_datasets:
+        raise ValueError(
+            "Supported datasets are MNIST, CIFAR10, CIFAR100, and UA_DETRAC."
+        )
     if args.processors < 1:
         raise ValueError("--processors must be at least 1.")
     if args.epochs < 1:
