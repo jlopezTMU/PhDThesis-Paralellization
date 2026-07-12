@@ -150,7 +150,7 @@ def single_node_train(node_id: int, X_train: np.ndarray, y_train: np.ndarray, X_
     print(f"Training with {len(X_train)} examples, validating with {len(X_val)} examples")
     for epoch in range(1, args.epochs + 1):
         # Match DLMP SYNC: recreate optimizer every global epoch.
-        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
         model.train()
         correct_train = 0
         total_train = len(X_train)
@@ -348,6 +348,7 @@ def single_node_train_uadetrac(device_str: str, args):
     )
 
     model = build_model("UA_DETRAC").to(device)
+
     criterion = nn.CrossEntropyLoss()
 
     print(f"Training with {len(train_ds)} UA-DETRAC images, validating with {len(val_ds)} images")
@@ -355,7 +356,7 @@ def single_node_train_uadetrac(device_str: str, args):
     start_time = time.time()
     for epoch in range(1, args.epochs + 1):
         # Match DLMP SYNC: recreate optimizer every global epoch.
-        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
         train_correct, train_total = train_one_epoch_loader(model, train_loader, device, optimizer, criterion)
         val_loss, val_correct, val_total = validate_loader(model, val_loader, device, criterion)
@@ -430,6 +431,11 @@ def distributed_train_worker_uadetrac(rank, args, train_index_chunks, val_index_
     )
 
     model = build_model("UA_DETRAC").to(device)
+
+    # Ensure all ranks start from the same model state.
+    for tensor in model.state_dict().values():
+        dist.broadcast(tensor, src=0)
+
     criterion = nn.CrossEntropyLoss()
     model_size_bytes = get_model_size_bytes(model)
 
@@ -438,7 +444,7 @@ def distributed_train_worker_uadetrac(rank, args, train_index_chunks, val_index_
 
     for epoch in range(1, args.epochs + 1):
         # Match DLMP SYNC: recreate optimizer every global epoch.
-        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
         train_correct, train_total = train_one_epoch_loader(model, train_loader, device, optimizer, criterion)
 
@@ -448,7 +454,7 @@ def distributed_train_worker_uadetrac(rank, args, train_index_chunks, val_index_
 
         # Match the DLMP/SYNC communication accounting convention:
         # each node sends and receives a full model to/from the synchronization process.
-        epoch_comm_cost = (world_size - 1) * model_size_bytes * 2
+        epoch_comm_cost = 0 if world_size == 1 else 2 * model_size_bytes
         total_comm_cost += epoch_comm_cost
 
         val_loss, val_correct, val_total = validate_loader(model, val_loader, device, criterion)
@@ -665,6 +671,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
     parser.add_argument("--lr", type=float, default=0.01, help="Learning rate")
     parser.add_argument("--momentum", type=float, default=0.9, help="Momentum for SGD optimizer")
+    parser.add_argument("--weight_decay", type=float, default=0.001, help="Weight decay for SGD optimizer")
     parser.add_argument("--ds", type=str, default="MNIST", help="MNIST, CIFAR10, or UA_DETRAC")
     parser.add_argument("--optuna", action="store_true", help="Use Optuna HPO to optimize LR and momentum")
 

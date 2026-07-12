@@ -97,7 +97,7 @@ def train_8args(fold, train_idx, val_idx, X_train_global, y_train_global, X_val_
             world_size = torch.distributed.get_world_size()
             for param in model.parameters():
                 param_bytes = param.nelement() * param.element_size()
-                epoch_comm_cost += 2 * (world_size - 1) * param_bytes
+                epoch_comm_cost += 2 * param_bytes
                 torch.distributed.all_reduce(param.data, op=torch.distributed.ReduceOp.SUM)
                 param.data /= world_size
 
