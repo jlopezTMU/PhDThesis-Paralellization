@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 REAL P2P-ring validation for UA-DETRAC.
 
@@ -67,6 +66,7 @@ class UADetracSceneDataset(Dataset):
         limit: int = 0,
     ) -> None:
         base_dir = Path(__file__).resolve().parent
+        self.transform = transform
 
         csv_p = Path(csv_path)
         self.csv_path = (base_dir / csv_p).resolve() if not csv_p.is_absolute() else csv_p.resolve()
@@ -132,7 +132,7 @@ def parse_args() -> argparse.Namespace:
     # Defaults follow the directory structure used by the DLMP UA-DETRAC code.
     parser.add_argument(
         "--csv_path",
-        default="../data/UA-DETRAC/scene_labels_traffic.csv",
+        default="../data/UA-DETRAC/DLMP/scene_labels_traffic.csv",
         help="CSV containing split, image_rel, and scene_name columns",
     )
     parser.add_argument(
@@ -478,6 +478,10 @@ def worker(
     final_total = 0
 
     for epoch in range(1, args.epochs + 1):
+        
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        epoch_start = time.time()
         optimizer = torch.optim.SGD(
         model.parameters(),
         lr=args.lr,
@@ -498,6 +502,12 @@ def worker(
 
         train_accuracy = 100.0 * train_correct / max(train_total, 1)
         validation_accuracy = 100.0 * validation_correct / max(validation_total, 1)
+        
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+
+        epoch_elapsed = time.time() - epoch_start
+        cumulative_elapsed = time.time() - start_time
 
         label = "Node 1" if world_size == 1 else f"Rank {rank}"
         print(
@@ -505,7 +515,9 @@ def worker(
             f"Training Accuracy: {train_accuracy:.2f}%, "
             f"Validation Accuracy: {validation_correct}/{validation_total} "
             f"= {validation_accuracy:.2f}%, "
-            f"Communication Cost: {per_epoch_cc} bytes",
+            f"Communication Cost: {per_epoch_cc} bytes, "
+            f"Epoch Elapsed Time: {epoch_elapsed:.4f} seconds, "
+            f"Cumulative Elapsed Time: {cumulative_elapsed:.4f} seconds",
             flush=True,
         )
 
