@@ -51,7 +51,7 @@ class ProcessorAgent(Agent):
         )
 
 
-        self.compute_capacity = 1.0   # set by the Model after agent creation; minimum capacity is 1.0
+        self.compute_capacity = 1.0   # Baseline capacity; values greater than 1.0 represent faster simulated nodes.
         self.processing_time = 0.0    # Initialize to numeric value to avoid None-related errors
 
 
@@ -129,8 +129,8 @@ class ProcessorAgent(Agent):
         self.test_set_size           = test_size
         self.processing_time         = time.time() - tic
 
-        # Scale compute time by capacity (uniform in [1.0, capacity_max])
-        self.processing_time *= getattr(self, "compute_capacity", 1.0)
+        # Larger compute capacity represents a faster simulated node.
+        self.processing_time /= getattr(self, "compute_capacity", 1.0)
 
 
         # Store training counts for model-level aggregation

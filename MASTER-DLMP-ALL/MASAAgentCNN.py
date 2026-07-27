@@ -44,7 +44,7 @@ class ProcessorAgent(Agent):
             self.device, self.args
         )
 
-        self.compute_capacity = 1.0  # Baseline compute capacity; agents may simulate slower nodes but not faster ones.
+        self.compute_capacity = 1.0  # Baseline capacity; values greater than 1.0 represent faster simulated nodes.
 
 
         self.fold_idx_loss = None
@@ -82,10 +82,9 @@ class ProcessorAgent(Agent):
 
     def step(self):
         import time
-        
-        # Compute-only timing
+
         compute_start = time.time()
-        tic = time.time()
+
         result = train_simulated(
             unique_id=self.unique_id,
             model=self.neural_net_model,
@@ -103,31 +102,33 @@ class ProcessorAgent(Agent):
             array_eval=self.array_eval
         )
 
-        compute_end = time.time()
-        self.processing_time = compute_end - compute_start  # compute-only time
-        
-        (self.fold_idx_loss,
-        self.fold_idx_accuracy,
-        correct_test,
-        test_size,
-        processing_time,
-        correct_train,
-        total_train) = result
+        raw_processing_time = time.time() - compute_start
 
-        self.correct_classifications = correct_test
-        self.test_set_size           = test_size
-        self.processing_time         = time.time() - tic
-        # Scale compute time by capacity (uniform in [1.0, capacity_max])
-        self.processing_time *= getattr(self, "compute_capacity", 1.0)
+        (
+            self.fold_idx_loss,
+            self.fold_idx_accuracy,
+            correct_test,
+            test_size,
+            _,
+            correct_train,
+            total_train
+        ) = result
 
-        # Store training counts for model-level aggregation.
-        self.train_correct = correct_train
-        self.train_total   = total_train
-        
+        # Store testing metrics.
         self.correct_classifications = correct_test
         self.test_set_size = test_size
 
-        # --- Communication timing ---
+        # Larger compute capacity represents a faster simulated node.
+        self.processing_time = (
+            raw_processing_time
+            / getattr(self, "compute_capacity", 1.0)
+        )
+
+        # Store training metrics.
+        self.train_correct = correct_train
+        self.train_total = total_train
+
+    def advance(self):
         self.merge_inbox()
 
 

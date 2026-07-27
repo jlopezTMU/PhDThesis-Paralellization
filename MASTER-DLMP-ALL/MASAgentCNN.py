@@ -128,7 +128,8 @@ class ProcessorAgent(Agent):
         self.processing_time         = time.time() - tic
 
         # Scale compute time by capacity (uniform in [1.0, capacity_max])
-        self.processing_time *= getattr(self, "compute_capacity", 1.0)
+        compute_capacity = max(getattr(self, "compute_capacity", 1.0), 1e-12) 
+        self.processing_time /= compute_capacity
 
 
         # Store training counts for model-level aggregation
@@ -137,19 +138,32 @@ class ProcessorAgent(Agent):
 
 
         # ---------------------------------------------------------------
-        #  Print per-node communication cost once this global epoch
+        # Communication cost for this global epoch
         # ---------------------------------------------------------------
 
         num_agents = self.model.num_processors
-        # Approximate per-node communication cost per epoch:
-        # (n - 1) * model_size_bytes * 2 (send + receive)
-        self.last_cc = (num_agents - 1) * self.model_size_bytes * 2
 
-        bw_Bps = self.args.net_bw_mbps * 125000.0  # 100 Mbps -> 12,500,000 B/s
-        self.last_comm_time_s = self.last_cc / bw_Bps
+        if num_agents <= 1:
+            # No synchronization for a single-node execution.
+            self.last_cc = 0
+            self.last_comm_time_s = 0.0
+        else:
+            # CENTRAL per-node communication:
+            # one upload of the local model and one download
+            # of the aggregated global model.
+            self.last_cc = 2 * self.model_size_bytes
 
-        print(f"Node {self.unique_id + 1} Model Communication Cost: {self.last_cc} bytes "
-        f"(~{self.last_comm_time_s:.3f} s at {self.args.net_bw_mbps} Mbps)")
+            # Convert network bandwidth from Mbps to bytes/second.
+            bw_Bps = self.args.net_bw_mbps * 125000.0
+            self.last_comm_time_s = self.last_cc / bw_Bps
+
+        print(
+            f"Node {self.unique_id + 1} Model Communication Cost: "
+            f"{self.last_cc} bytes "
+            f"(~{self.last_comm_time_s:.3f} s at "
+            f"{self.args.net_bw_mbps} Mbps)"
+        )
+        
     # --------------------------------------------------------------------- #
     #  Called by model after averaging weights
     # --------------------------------------------------------------------- #
