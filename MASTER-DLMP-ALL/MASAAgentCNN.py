@@ -128,9 +128,8 @@ class ProcessorAgent(Agent):
         self.train_correct = correct_train
         self.train_total = total_train
 
-    def advance(self):
+        # Merge model parameters received from the P2P-ring neighbour.
         self.merge_inbox()
-
 
     def send_weights(self, *_):
         state_dict = {k: v.cpu().clone() for k, v in self.neural_net_model.state_dict().items()}
